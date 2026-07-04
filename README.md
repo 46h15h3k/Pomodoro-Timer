@@ -83,5 +83,3 @@ Settings changes are applied without losing progress on other sessions, and only
 - State is kept in memory only — refreshing the page resets the timer, stats, and settings. Adding `localStorage` persistence for `config`, preferences, and running totals would be a natural follow-up.
 - No backend, accounts, or cross-device sync — this is a single-page, single-user tool by design.
 - Sound is a generated tone rather than a custom audio file; swapping in a custom `.mp3`/`.wav` via `<audio>` would be a simple enhancement if a different notification sound is preferred.
-
-Project URL - https://roadmap.sh/projects/pomodoro-timer
