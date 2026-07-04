@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interval — Pomodoro Console</title>
+<style>
+  :root{
+    --bg: #0b0e12;
+    --panel: #12161c;
+    --panel-2: #171c23;
+    --line: #232a33;
+    --line-soft: #1a1f27;
+    --text: #e7ebf0;
+    --text-dim: #8b98a8;
+    --text-faint: #5b6675;
+    --work: #ffb454;
+    --work-dim: #453722;
+    --short: #5eead4;
+    --short-dim: #1f3a37;
+    --long: #a78bfa;
+    --long-dim: #2f2a45;
+    --danger: #ef6b6b;
+    --radius: 10px;
+    --mono: "IBM Plex Mono", "SF Mono", "Cascadia Mono", Consolas, monospace;
+    --sans: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    padding:clamp(16px, 4vw, 48px) 16px 64px;
+    line-height:1.5;
+  }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; overflow:hidden;
+    clip:rect(0,0,0,0); white-space:nowrap;
+  }
+
+  a{color:inherit;}
+
+  .app{
+    width:100%;
+    max-width:520px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+
+  /* ---------- Header ---------- */
+  .app-header{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:12px;
+    padding:0 4px;
+  }
+  .brand{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+  }
+  .brand .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+  }
+  .brand h1{
+    font-size:18px;
+    font-weight:600;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  .header-meta{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-faint);
+    text-align:right;
+  }
+
+  /* ---------- Main console panel ---------- */
+  .console{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:clamp(20px, 5vw, 32px);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:22px;
+  }
+
+  .status-row{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+
+  .status-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    padding:6px 12px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--text-dim);
+    transition:border-color .25s, color .25s, background-color .25s;
+  }
+  .status-badge .dot{
+    width:7px;
+    height:7px;
+    border-radius:50%;
+    background:currentColor;
+    flex-shrink:0;
+  }
+  .status-badge[data-running="true"] .dot{
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .status-badge[data-running="true"] .dot{ animation:none; }
+  }
+  @keyframes pulse{
+    0%,100%{opacity:1;}
+    50%{opacity:0.35;}
+  }
+
+  .status-badge[data-mode="work"]{ color:var(--work); border-color:var(--work-dim); }
+  .status-badge[data-mode="short"]{ color:var(--short); border-color:var(--short-dim); }
+  .status-badge[data-mode="long"]{ color:var(--long); border-color:var(--long-dim); }
+
+  .cycle-label{
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--text-faint);
+  }
+
+  /* ---------- Ring + timer ---------- */
+  .ring-wrap{
+    position:relative;
+    width:min(280px, 72vw);
+    height:min(280px, 72vw);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .ring-wrap svg{
+    width:100%;
+    height:100%;
+    transform:rotate(-90deg);
+  }
+  .ring-track{
+    fill:none;
+    stroke:var(--line);
+    stroke-width:8;
+  }
+  .ring-progress{
+    fill:none;
+    stroke-width:8;
+    stroke-linecap:round;
+    transition:stroke-dashoffset 0.4s linear, stroke .25s;
+  }
+  @media (prefers-reduced-motion: reduce){
+    .ring-progress{ transition:stroke .25s; }
+  }
+  .ring-progress[data-mode="work"]{ stroke:var(--work); }
+  .ring-progress[data-mode="short"]{ stroke:var(--short); }
+  .ring-progress[data-mode="long"]{ stroke:var(--long); }
+
+  .ring-center{
+    position:absolute;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+  }
+  .time-readout{
+    font-family:var(--mono);
+    font-size:clamp(40px, 12vw, 56px);
+    font-weight:600;
+    letter-spacing:-0.02em;
+    font-variant-numeric:tabular-nums;
+  }
+  .time-sub{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:0.1em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+  }
+
+  /* ---------- Controls ---------- */
+  .controls{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:12px;
+    width:100%;
+  }
+  button{
+    font-family:var(--sans);
+    font-size:14px;
+    font-weight:600;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--text);
+    cursor:pointer;
+    padding:12px 18px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    transition:background-color .15s, border-color .15s, transform .1s;
+  }
+  button:hover{ background:#1c222b; border-color:var(--line-soft); }
+  button:active{ transform:scale(0.97); }
+  button:focus-visible{
+    outline:2px solid var(--short);
+    outline-offset:2px;
+  }
+  button.icon-btn{
+    padding:10px;
+    width:42px;
+    height:42px;
+    border-radius:50%;
+  }
+  button.primary{
+    background:var(--work);
+    border-color:var(--work);
+    color:#1a1305;
+    min-width:132px;
+    padding:12px 24px;
+    font-size:15px;
+  }
+  button.primary:hover{ background:#ffc476; }
+  button.primary[data-mode="short"]{ background:var(--short); border-color:var(--short); color:#052824; }
+  button.primary[data-mode="short"]:hover{ background:#8ff2e0; }
+  button.primary[data-mode="long"]{ background:var(--long); border-color:var(--long); color:#1c1338; }
+  button.primary[data-mode="long"]:hover{ background:#bfa9fd; }
+
+  button.ghost{
+    background:transparent;
+  }
+  button.ghost:hover{ background:var(--panel-2); }
+
+  /* ---------- Cycle dots ---------- */
+  .cycle-dots{
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
+  .cycle-dots .seg{
+    width:22px;
+    height:6px;
+    border-radius:3px;
+    background:var(--line);
+    transition:background-color .3s;
+  }
+  .cycle-dots .seg.filled{ background:var(--work); }
+  .cycle-dots .seg.current{ background:var(--text-dim); }
+
+  /* ---------- Stats strip ---------- */
+  .stats{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:10px;
+  }
+  .stat{
+    background:var(--panel-2);
+    border:1px solid var(--line-soft);
+    border-radius:10px;
+    padding:12px 10px;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    text-align:center;
+  }
+  .stat .stat-label{
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+  }
+  .stat .stat-value{
+    font-family:var(--mono);
+    font-size:20px;
+    font-weight:600;
+  }
+
+  /* ---------- Settings ---------- */
+  .settings-toggle-row{
+    display:flex;
+    justify-content:center;
+  }
+  .settings-toggle{
+    background:transparent;
+    border:none;
+    color:var(--text-faint);
+    font-size:12px;
+    font-family:var(--mono);
+    letter-spacing:0.06em;
+    text-transform:uppercase;
+    padding:8px 12px;
+    display:inline-flex;
+    gap:6px;
+    align-items:center;
+  }
+  .settings-toggle:hover{ color:var(--text-dim); background:transparent; }
+  .settings-toggle .chevron{
+    transition:transform .2s;
+    display:inline-block;
+  }
+  .settings-toggle[aria-expanded="true"] .chevron{ transform:rotate(180deg); }
+
+  .settings-panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:0;
+    overflow:hidden;
+    max-height:0;
+    opacity:0;
+    transition:max-height .3s ease, opacity .25s ease, padding .3s ease;
+  }
+  .settings-panel.open{
+    max-height:800px;
+    opacity:1;
+    padding:20px clamp(20px, 5vw, 32px) 24px;
+  }
+  .settings-panel h2{
+    font-size:13px;
+    font-family:var(--mono);
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-faint);
+    margin:0 0 16px;
+  }
+  .field-grid{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:14px;
+    margin-bottom:16px;
+  }
+  .field{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .field label{
+    font-size:12px;
+    color:var(--text-dim);
+  }
+  .field input[type="number"]{
+    background:var(--panel-2);
+    border:1px solid var(--line-soft);
+    border-radius:8px;
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:15px;
+    padding:9px 10px;
+    width:100%;
+  }
+  .field input[type="number"]:focus-visible{
+    outline:2px solid var(--short);
+    outline-offset:1px;
+  }
+
+  .toggle-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:10px 0;
+    border-top:1px solid var(--line-soft);
+  }
+  .toggle-row label{
+    font-size:13px;
+    color:var(--text-dim);
+  }
+  .switch{
+    position:relative;
+    width:42px;
+    height:24px;
+    flex-shrink:0;
+  }
+  .switch input{
+    position:absolute;
+    opacity:0;
+    width:100%;
+    height:100%;
+    margin:0;
+    cursor:pointer;
+  }
+  .switch .track{
+    position:absolute;
+    inset:0;
+    background:var(--line);
+    border-radius:999px;
+    transition:background-color .2s;
+    pointer-events:none;
+  }
+  .switch .thumb{
+    position:absolute;
+    top:3px; left:3px;
+    width:18px; height:18px;
+    background:var(--text);
+    border-radius:50%;
+    transition:transform .2s;
+    pointer-events:none;
+  }
+  .switch input:checked + .track{ background:var(--short-dim); }
+  .switch input:checked + .track + .thumb{ transform:translateX(18px); background:var(--short); }
+  .switch input:focus-visible + .track{ outline:2px solid var(--short); outline-offset:2px; }
+
+  .settings-actions{
+    display:flex;
+    gap:10px;
+    margin-top:18px;
+  }
+  .settings-actions button{ flex:1; }
+
+  .visually-hidden-label{
+    font-size:11px;
+    color:var(--text-faint);
+  }
+
+  footer{
+    text-align:center;
+    font-size:12px;
+    color:var(--text-faint);
+    padding:8px 4px 0;
+  }
+
+  @media (max-width: 380px){
+    .field-grid{ grid-template-columns:1fr; }
+    .stats{ grid-template-columns:1fr 1fr 1fr; gap:8px; }
+    .stat .stat-value{ font-size:17px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="eyebrow">interval // console</span>
+      <h1>Pomodoro tracker</h1>
+    </div>
+    <div class="header-meta" id="date-meta"></div>
+  </header>
+
+  <main class="console" role="main" aria-labelledby="app-title-sr">
+    <h2 id="app-title-sr" class="sr-only">Pomodoro timer console</h2>
+
+    <div class="status-row">
+      <span class="status-badge" id="status-badge" data-mode="work" data-running="false">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">Work</span>
+      </span>
+      <span class="cycle-label" id="cycle-label">Session 1 of 4</span>
+    </div>
+
+    <div class="ring-wrap">
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="ring-track" cx="100" cy="100" r="90"></circle>
+        <circle class="ring-progress" id="ring-progress" data-mode="work" cx="100" cy="100" r="90"
+                stroke-dasharray="565.48" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="ring-center">
+        <span class="time-readout" id="time-readout" role="timer" aria-hidden="true">25:00</span>
+        <span class="time-sub" id="time-sub">Ready</span>
+      </div>
+    </div>
+
+    <div class="cycle-dots" id="cycle-dots" aria-hidden="true"></div>
+
+    <div class="controls">
+      <button type="button" class="icon-btn ghost" id="reset-btn" aria-label="Reset current session">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
+      </button>
+      <button type="button" class="primary" id="start-pause-btn" data-mode="work">
+        <svg id="play-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <span id="start-pause-label">Start</span>
+      </button>
+      <button type="button" class="icon-btn ghost" id="skip-btn" aria-label="Skip to next session">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4l10 8-10 8V4z"/><path d="M19 5v14"/></svg>
+      </button>
+    </div>
+
+    <div class="stats" aria-label="Session statistics">
+      <div class="stat">
+        <span class="stat-label">Completed</span>
+        <span class="stat-value" id="stat-completed">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Cycle</span>
+        <span class="stat-value" id="stat-cycle">1 / 4</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Focus time</span>
+        <span class="stat-value" id="stat-focus">0m</span>
+      </div>
+    </div>
+  </main>
+
+  <div class="settings-toggle-row">
+    <button type="button" class="settings-toggle" id="settings-toggle" aria-expanded="false" aria-controls="settings-panel">
+      <span>Configure intervals</span>
+      <svg class="chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </div>
+
+  <section class="settings-panel" id="settings-panel" aria-hidden="true">
+    <h2>Interval configuration</h2>
+    <form id="settings-form">
+      <div class="field-grid">
+        <div class="field">
+          <label for="input-work">Work session (min)</label>
+          <input type="number" id="input-work" min="1" max="90" value="25" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="input-short">Short break (min)</label>
+          <input type="number" id="input-short" min="1" max="60" value="5" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="input-long">Long break (min)</label>
+          <input type="number" id="input-long" min="1" max="90" value="15" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="input-cycle">Sessions before long break</label>
+          <input type="number" id="input-cycle" min="2" max="8" value="4" inputmode="numeric">
+        </div>
+      </div>
+
+      <div class="toggle-row">
+        <label for="toggle-autostart">Auto-start next session</label>
+        <span class="switch">
+          <input type="checkbox" id="toggle-autostart">
+          <span class="track" aria-hidden="true"></span>
+          <span class="thumb" aria-hidden="true"></span>
+        </span>
+      </div>
+      <div class="toggle-row">
+        <label for="toggle-sound">Sound notification</label>
+        <span class="switch">
+          <input type="checkbox" id="toggle-sound" checked>
+          <span class="track" aria-hidden="true"></span>
+          <span class="thumb" aria-hidden="true"></span>
+        </span>
+      </div>
+
+      <div class="settings-actions">
+        <button type="button" class="ghost" id="settings-cancel">Cancel</button>
+        <button type="submit" class="primary" id="settings-apply" data-mode="work">Apply</button>
+      </div>
+    </form>
+  </section>
+
+  <footer>Built with the Pomodoro Technique &middot; runs entirely in your browser</footer>
+</div>
+
+<div id="live-region" class="sr-only" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  var config = { work: 25, short: 5, long: 15, cycle: 4 };
+  var prefs = { autoStart: false, sound: true };
+
+  var state = {
+    mode: "work",
+    remaining: config.work * 60,
+    running: false,
+    completed: 0,
+    focusSeconds: 0,
+    cyclePos: 0
+  };
+
+  var intervalId = null;
+  var audioCtx = null;
+
+  var els = {
+    statusBadge: document.getElementById("status-badge"),
+    statusText: document.getElementById("status-text"),
+    cycleLabel: document.getElementById("cycle-label"),
+    ring: document.getElementById("ring-progress"),
+    time: document.getElementById("time-readout"),
+    timeSub: document.getElementById("time-sub"),
+    dots: document.getElementById("cycle-dots"),
+    startPauseBtn: document.getElementById("start-pause-btn"),
+    startPauseLabel: document.getElementById("start-pause-label"),
+    playIcon: document.getElementById("play-icon"),
+    resetBtn: document.getElementById("reset-btn"),
+    skipBtn: document.getElementById("skip-btn"),
+    statCompleted: document.getElementById("stat-completed"),
+    statCycle: document.getElementById("stat-cycle"),
+    statFocus: document.getElementById("stat-focus"),
+    settingsToggle: document.getElementById("settings-toggle"),
+    settingsPanel: document.getElementById("settings-panel"),
+    settingsForm: document.getElementById("settings-form"),
+    settingsCancel: document.getElementById("settings-cancel"),
+    inputWork: document.getElementById("input-work"),
+    inputShort: document.getElementById("input-short"),
+    inputLong: document.getElementById("input-long"),
+    inputCycle: document.getElementById("input-cycle"),
+    toggleAutostart: document.getElementById("toggle-autostart"),
+    toggleSound: document.getElementById("toggle-sound"),
+    liveRegion: document.getElementById("live-region"),
+    dateMeta: document.getElementById("date-meta")
+  };
+
+  var RING_CIRCUMFERENCE = 2 * Math.PI * 90;
+  var MODE_LABEL = { work: "Work", short: "Short break", long: "Long break" };
+
+  function durationFor(mode){
+    if (mode === "work") return config.work * 60;
+    if (mode === "short") return config.short * 60;
+    return config.long * 60;
+  }
+
+  function formatTime(totalSeconds){
+    var m = Math.floor(totalSeconds / 60);
+    var s = totalSeconds % 60;
+    return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  function announce(msg){
+    els.liveRegion.textContent = msg;
+  }
+
+  function renderDots(){
+    els.dots.innerHTML = "";
+    for (var i = 0; i < config.cycle; i++){
+      var seg = document.createElement("span");
+      seg.className = "seg";
+      if (i < state.cyclePos) seg.className += " filled";
+      if (i === state.cyclePos && state.mode === "work") seg.className += " current";
+      els.dots.appendChild(seg);
+    }
+  }
+
+  function render(){
+    var total = durationFor(state.mode);
+    var frac = total > 0 ? state.remaining / total : 0;
+    var offset = RING_CIRCUMFERENCE * (1 - frac);
+
+    els.ring.setAttribute("stroke-dasharray", RING_CIRCUMFERENCE.toFixed(2));
+    els.ring.setAttribute("stroke-dashoffset", offset.toFixed(2));
+    els.ring.setAttribute("data-mode", state.mode);
+
+    els.time.textContent = formatTime(state.remaining);
+    els.timeSub.textContent = state.running ? "In progress" : (state.remaining === total ? "Ready" : "Paused");
+
+    els.statusBadge.setAttribute("data-mode", state.mode);
+    els.statusBadge.setAttribute("data-running", state.running ? "true" : "false");
+    els.statusText.textContent = MODE_LABEL[state.mode];
+
+    els.cycleLabel.textContent = state.mode === "work"
+      ? "Session " + (state.cyclePos + 1) + " of " + config.cycle
+      : (state.mode === "long" ? "Long break" : "Short break");
+
+    els.startPauseLabel.textContent = state.running ? "Pause" : (state.remaining === total ? "Start" : "Resume");
+    els.playIcon.innerHTML = state.running
+      ? '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>'
+      : '<path d="M8 5v14l11-7z"/>';
+    els.startPauseBtn.setAttribute("data-mode", state.mode);
+
+    els.statCompleted.textContent = state.completed;
+    els.statCycle.textContent = (state.cyclePos) + " / " + config.cycle;
+    els.statFocus.textContent = Math.round(state.focusSeconds / 60) + "m";
+
+    renderDots();
+
+    document.title = (state.running ? formatTime(state.remaining) + " \u00b7 " : "") +
+      MODE_LABEL[state.mode] + " \u2014 Interval";
+  }
+
+  function tick(){
+    state.remaining -= 1;
+    if (state.mode === "work" && state.running) state.focusSeconds += 1;
+
+    if (state.remaining <= 0){
+      endSession();
+      return;
+    }
+    render();
+  }
+
+  function endSession(){
+    playChime();
+    var endedMode = state.mode;
+
+    if (endedMode === "work"){
+      state.completed += 1;
+      state.cyclePos += 1;
+      if (state.cyclePos >= config.cycle){
+        state.mode = "long";
+        state.cyclePos = 0;
+      } else {
+        state.mode = "short";
+      }
+    } else {
+      state.mode = "work";
+    }
+
+    state.remaining = durationFor(state.mode);
+    announce(MODE_LABEL[endedMode] + " session ended. Starting " + MODE_LABEL[state.mode] + ".");
+
+    if (prefs.autoStart){
+      state.running = true;
+      startInterval();
+    } else {
+      state.running = false;
+      stopInterval();
+    }
+    render();
+  }
+
+  function startInterval(){
+    stopInterval();
+    intervalId = window.setInterval(tick, 1000);
+  }
+
+  function stopInterval(){
+    if (intervalId){
+      window.clearInterval(intervalId);
+      intervalId = null;
+    }
+  }
+
+  function toggleStartPause(){
+    state.running = !state.running;
+    if (state.running){
+      startInterval();
+      announce(MODE_LABEL[state.mode] + " session started.");
+    } else {
+      stopInterval();
+      announce(MODE_LABEL[state.mode] + " session paused.");
+    }
+    render();
+  }
+
+  function resetSession(){
+    state.running = false;
+    stopInterval();
+    state.remaining = durationFor(state.mode);
+    announce(MODE_LABEL[state.mode] + " session reset.");
+    render();
+  }
+
+  function skipSession(){
+    stopInterval();
+    state.remaining = 0;
+    endSession();
+  }
+
+  function playChime(){
+    if (!prefs.sound) return;
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var now = audioCtx.currentTime;
+      [0, 0.18].forEach(function(delay, i){
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = i === 0 ? 880 : 1046.5;
+        gain.gain.setValueAtTime(0.0001, now + delay);
+        gain.gain.exponentialRampToValueAtTime(0.25, now + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + 0.32);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + delay);
+        osc.stop(now + delay + 0.34);
+      });
+    } catch (e) { /* audio unavailable, fail silently */ }
+  }
+
+  function openSettings(){
+    els.settingsPanel.classList.add("open");
+    els.settingsPanel.setAttribute("aria-hidden", "false");
+    els.settingsToggle.setAttribute("aria-expanded", "true");
+    els.inputWork.value = config.work;
+    els.inputShort.value = config.short;
+    els.inputLong.value = config.long;
+    els.inputCycle.value = config.cycle;
+    els.toggleAutostart.checked = prefs.autoStart;
+    els.toggleSound.checked = prefs.sound;
+    els.inputWork.focus();
+  }
+
+  function closeSettings(){
+    els.settingsPanel.classList.remove("open");
+    els.settingsPanel.setAttribute("aria-hidden", "true");
+    els.settingsToggle.setAttribute("aria-expanded", "false");
+    els.settingsToggle.focus();
+  }
+
+  function clampInt(value, min, max, fallback){
+    var n = parseInt(value, 10);
+    if (isNaN(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function applySettings(evt){
+    evt.preventDefault();
+    config.work = clampInt(els.inputWork.value, 1, 90, config.work);
+    config.short = clampInt(els.inputShort.value, 1, 60, config.short);
+    config.long = clampInt(els.inputLong.value, 1, 90, config.long);
+    config.cycle = clampInt(els.inputCycle.value, 2, 8, config.cycle);
+    prefs.autoStart = els.toggleAutostart.checked;
+    prefs.sound = els.toggleSound.checked;
+
+    if (state.cyclePos > config.cycle) state.cyclePos = 0;
+
+    if (!state.running){
+      state.remaining = durationFor(state.mode);
+    }
+    announce("Settings applied.");
+    closeSettings();
+    render();
+  }
+
+  function updateDateMeta(){
+    var d = new Date();
+    els.dateMeta.textContent = d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  }
+
+  els.startPauseBtn.addEventListener("click", toggleStartPause);
+  els.resetBtn.addEventListener("click", resetSession);
+  els.skipBtn.addEventListener("click", skipSession);
+  els.settingsToggle.addEventListener("click", function(){
+    var isOpen = els.settingsPanel.classList.contains("open");
+    if (isOpen) closeSettings(); else openSettings();
+  });
+  els.settingsCancel.addEventListener("click", closeSettings);
+  els.settingsForm.addEventListener("submit", applySettings);
+
+  updateDateMeta();
+  render();
+})();
+</script>
+
+</body>
+</html>
