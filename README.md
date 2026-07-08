@@ -2,11 +2,7 @@
 
 A Pomodoro Technique timer built with vanilla HTML, CSS, and JavaScript — no framework, no build step, no dependencies. Deploys as a single static file to GitHub Pages, Vercel, or Cloudflare Pages.
 
-
 **[Live demo](https://46h15h3k.github.io/Pomodoro-Timer/)**
-
-![Pomodoro Tracker screenshot](./screenshot.png)
-_(add a screenshot of the app here)_
 
 ## Overview
 
